@@ -184,6 +184,7 @@ copy_userdata_to_mem() {
     mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
     if [ $((src_size + 1000000)) -gt "$mem_free_space" ]; then
         notify "Falta de memória, não foi possível copiar os dados do usuário. Retornar o backup manualmente." critical
+        rm -f /tmp/system.img /tmp/vendor.img
         rm -f "$pidfile"
         exit 1
     fi
