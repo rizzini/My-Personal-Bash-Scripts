@@ -14,9 +14,9 @@ original_user_id="$(id -u "$original_user")"
 
 run_as_user() {
     sudo -u "$original_user" \
-    XDG_RUNTIME_DIR="/run/user/$original_user_id" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$original_user_id/bus" \
-    "$@"
+        XDG_RUNTIME_DIR="/run/user/$original_user_id" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$original_user_id/bus" \
+        "$@"
 }
 
 notify() {
@@ -28,8 +28,8 @@ notify() {
 }
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Rodar como root!"
-    notify "Rodar como root!" critical
+    echo "Rodar como root."
+    notify "Rodar como root." critical
     exit 1
 fi
 
@@ -50,7 +50,7 @@ copy_userdata_to_mem() {
         rm -f /tmp/system.img /tmp/vendor.img
 
         if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/tmp' ]; then
-             sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
+            sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
         fi
 
         src1="/usr/share/waydroid-extra/images/system.img"
@@ -206,7 +206,7 @@ copy_userdata_to_mem() {
 
     yad_pid=$!
 
-    setsid bash -c 'cd "'"$original_user_home"'"/.local/share; stdbuf -oL rsync -a --delete --numeric-ids --info=progress2 --no-inc-recursive waydroid/ /dev/shm/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0, /([0-9]+)%/, m)) { print m[1]; fflush() } } END { print 100 }' > "$fifo" &
+    setsid bash -c 'cd "'"$original_user_home"'"/.local/share; stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ /dev/shm/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0, /([0-9]+)%/, m)) { print m[1]; fflush() } } END { print 100 }' > "$fifo" &
 
     pipe_pid=$!
 
@@ -265,44 +265,8 @@ copy_userdata_to_mem() {
     fi
 
     mv "$original_user_home"/.local/share/waydroid "$original_user_home"/.local/share/waydroid_bkp
+
     ln -s /dev/shm/waydroid "$original_user_home"/.local/share/waydroid
-
-    src_count=$(find "$original_user_home"/.local/share/waydroid_bkp -type f | wc -l)
-    dst_count=$(find /dev/shm/waydroid -type f | wc -l)
-    src_size=$(du -sb "$original_user_home"/.local/share/waydroid_bkp | awk '{print $1}')
-    dst_size=$(du -sb /dev/shm/waydroid | awk '{print $1}')
-
-    if [[ "$src_count" -ne "$dst_count" || "$src_size" -ne "$dst_size" ]]; then
-        local has_error=0
-
-        if ! rm -rf /dev/shm/waydroid; then
-            has_error=1
-        fi
-
-
-        if ! rm "$original_user_home/.local/share/waydroid"; then
-            has_error=1
-        fi
-
-        if ! mv "$original_user_home"/.local/share/waydroid_bkp "$original_user_home"/.local/share/waydroid; then
-            has_error=1
-        fi
-
-        if [ "$has_error" -eq 0 ]; then
-            notify "Erro na cópia! Dados revertidos com sucesso." critical
-        else
-            notify "Erro na cópia! Verifique manualmente." critical
-        fi
-
-        mkdir -p "$original_user_home"/.local/share/waydroid/data/media
-
-        if ! mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media || ! mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
-            notify "Erro ao restaurar bind após rollback"
-        fi
-
-        rm -f "$pidfile"
-        exit 1
-    fi
 
     mkdir -p /dev/shm/waydroid/data/media
 
@@ -342,8 +306,6 @@ copy_userdata_to_disk() {
         exit 1
     fi
 
-    src_size=$(du -sb /dev/shm/waydroid | awk '{print $1}')
-
     fifo="/tmp/waydroid_progress_fifo_$$"
     mkfifo "$fifo"
 
@@ -361,7 +323,7 @@ copy_userdata_to_disk() {
 
     yad_pid=$!
 
-    setsid bash -c 'cd /dev/shm; stdbuf -oL rsync -a --delete --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0,/([0-9]+)%/,m)){ print m[1]; fflush() } } END{ print 100 }' > "$fifo" &
+    setsid bash -c 'cd /dev/shm; stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0,/([0-9]+)%/,m)){ print m[1]; fflush() } } END{ print 100 }' > "$fifo" &
 
     pipe_pid=$!
 
@@ -378,37 +340,28 @@ copy_userdata_to_disk() {
         exit 1
     fi
 
-    src_count=$(find /dev/shm/waydroid -type f | wc -l)
-    dst_count=$(find "$original_user_home"/.local/share/waydroid -type f | wc -l)
-    src_size=$(du -sb /dev/shm/waydroid | awk '{print $1}')
-    dst_size=$(du -sb "$original_user_home"/.local/share/waydroid | awk '{print $1}')
+    mkdir -p "$original_user_home"/.local/share/waydroid/data/media
 
-    if [[ "$src_count" -ne "$dst_count" || "$src_size" -ne "$dst_size" ]]; then
-
-        if [ -L "${original_user_home}/.local/share/waydroid" ]; then
-            rm -f "$original_user_home"/.local/share/waydroid
-        fi
-
-        notify "Erro na restauração! CRC não bateu. Verifique manualmente." critical
-    else
-        mkdir -p "$original_user_home"/.local/share/waydroid/data/media
-
-        if ! mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media; then
-            notify "Erro ao montar bind" critical
-            rm -f "$pidfile"
-            exit 1
-        fi
-
-        if ! mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
-            notify "Bind não foi aplicado corretamente" critical
-            rm -f "$pidfile"
-            exit 1
-        fi
-
-        rm -rf /dev/shm/waydroid
-        rm -rf "$original_user_home"/.local/share/waydroid_bkp
+    if ! mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media; then
+        notify "Erro ao montar bind" critical
+        rm -f "$pidfile"
+        exit 1
     fi
+
+    if ! mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
+        notify "Bind não foi aplicado corretamente" critical
+        rm -f "$pidfile"
+        exit 1
+    fi
+
+    rm -rf /dev/shm/waydroid
+    rm -rf "$original_user_home"/.local/share/waydroid_bkp
     rm -f "$pidfile"
+}
+
+notify_exit() {
+    trap 'notify "Waydroid encerrado de forma inesperada." critical' INT TERM
+    trap 'notify "Waydroid encerrado."' EXIT
 }
 
 if systemctl is-active "waydroid-container.service" &> /dev/null || \
@@ -463,6 +416,7 @@ else
 
     if [ "$choice" -eq 1 ]; then
         if mountpoint -q "$original_user_home/.local/share/waydroid/data/media"; then
+            notify_exit
             run_as_user systemd-run --user --scope waydroid show-full-ui
         else
             notify "Waydroid não rodou; bind do diretório de mídia não está ativo." critical
@@ -472,12 +426,11 @@ else
         if mountpoint -q /dev/shm/waydroid/data/media; then
             if [ "$copy_IMGs" -eq 1 ]; then
                 if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
+                    notify_exit
                     run_as_user systemd-run --user --scope waydroid show-full-ui
-                else
-                    notify "Waydroid não rodou; imagens não estão na memória ou houve algum problema na cópia." critical
-                    exit 1
                 fi
             else
+                notify_exit
                 run_as_user systemd-run --user --scope waydroid show-full-ui
             fi
         else
@@ -488,7 +441,6 @@ else
 
     run_as_user systemd-run --user --scope waydroid session stop
     systemctl stop waydroid-container.service keyd.service
-    notify "Waydroid encerrado.."
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk
