@@ -49,9 +49,11 @@ copy_userdata_to_mem() {
     if [ $copy_IMGs -eq 1 ]; then
         rm -f /tmp/system.img /tmp/vendor.img
 
-        if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/tmp' ]; then
+        if [ "$(awk '/\<images_path\>/{print $3}' )" != '/tmp' ]; then
             sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
         fi
+
+        grep images_path /var/lib/waydroid/waydroid.cfg #debug
 
         src1="/usr/share/waydroid-extra/images/system.img"
         src2="/usr/share/waydroid-extra/images/vendor.img"
@@ -60,7 +62,7 @@ copy_userdata_to_mem() {
         size2=$(stat -c%s "$src2")
 
         mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
-        if [ $((size1 + size2 + 1000000)) -gt "$mem_free_space" ]; then
+        if [ $((size1 + size2 + 200000000)) -gt "$mem_free_space" ]; then
             rm -f /tmp/system.img /tmp/vendor.img
             notify "Falta de memória, não foi possível copiar as IMGs." critical
             rm -f "$pidfile"
@@ -182,7 +184,7 @@ copy_userdata_to_mem() {
     src_size=$(du -sb "$original_user_home"/.local/share/waydroid | awk '{print $1}')
 
     mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
-    if [ $((src_size + 1000000)) -gt "$mem_free_space" ]; then
+    if [ $((src_size + 200000000)) -gt "$mem_free_space" ]; then
         notify "Falta de memória, não foi possível copiar os dados do usuário. Retornar o backup manualmente." critical
         rm -f /tmp/system.img /tmp/vendor.img
         rm -f "$pidfile"
@@ -290,6 +292,8 @@ copy_userdata_to_disk() {
     if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/usr/share/waydroid-extra/images' ]; then
         sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/usr/share/waydroid-extra/images|' /var/lib/waydroid/waydroid.cfg
     fi
+
+    grep images_path /var/lib/waydroid/waydroid.cfg #debug
 
     if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
         rm /tmp/waydroid_IMGs_on_mem
