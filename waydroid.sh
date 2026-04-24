@@ -386,10 +386,22 @@ cooldown() {
     fi
 
     echo "$now" > "$cooldown_file"
-    return 0
 }
 
-if [ "$(waydroid shell getprop sys.boot_completed)" == "1" ] || lsns | grep -E 'android|lineageos' &> /dev/null; then
+connect_adb() {
+    (
+        for ((i=0; i<5; i++)); do
+            local adb_connect="$(adb connect 192.168.240.112)"
+            if [[ "$adb_connect" == *"connected to"* ]] || [[ $adb_connect == *"already connected"* ]]; then
+                break
+            fi
+            sleep 2
+        done
+    ) &> /dev/null &
+
+}
+
+if lsns | grep -E 'android|lineageos' &> /dev/null || [ "$(waydroid shell getprop sys.boot_completed)" == "1" ] || systemctl is-active "waydroid-container.service" &> /dev/null; then
 
     run_as_user systemd-run --user --scope waydroid session stop
     systemctl stop waydroid-container.service keyd.service
@@ -441,15 +453,17 @@ else
     if [ "$choice" -eq 1 ]; then
         if mountpoint -q "$original_user_home/.local/share/waydroid/data/media"; then
             notify_exit
-            run_as_user systemd-run --user --scope waydroid show-full-ui | while IFS= read -r process; do
-                if [[ $process == *"Did not receive a reply"* ]]; then
+            while IFS= read -r process; do
+                if [[ $process == *"Android with user 0 is ready"* ]]; then
+                    connect_adb
+                elif [[ $process == *"Did not receive a reply"* ]]; then
                     if cooldown; then
-                        notify 'Waydroid travou..' critical
+                        notify 'Waydroid travou.. Tentando fechar.' critical
                         bash "$(realpath "$0")" &> /dev/null & disown
                         break
                     fi
                 fi
-            done
+            done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
         else
             notify "Waydroid não rodou; bind do diretório de mídia não está ativo." critical
             exit 1
@@ -459,34 +473,37 @@ else
             if [ "$copy_IMGs" -eq 1 ]; then
                 if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
                     notify_exit
-                    run_as_user systemd-run --user --scope waydroid show-full-ui | while IFS= read -r process; do
-                        if [[ $process == *"Did not receive a reply"* ]]; then
+                    while IFS= read -r process; do
+                        if [[ $process == *"Android with user 0 is ready"* ]]; then
+                            connect_adb
+                        elif [[ $process == *"Did not receive a reply"* ]]; then
                             if cooldown; then
-                                notify 'Waydroid travou..' critical
+                                notify 'Waydroid travou.. Tentando fechar.' critical
                                 bash "$(realpath "$0")" &> /dev/null & disown
                                 break
                             fi
                         fi
-                    done
+                    done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
                 fi
             else
                 notify_exit
-                run_as_user systemd-run --user --scope waydroid show-full-ui | while IFS= read -r process; do
-                    if [[ $process == *"Did not receive a reply"* ]]; then
+                while IFS= read -r process; do
+                    if [[ $process == *"Android with user 0 is ready"* ]]; then
+                        connect_adb
+                    elif [[ $process == *"Did not receive a reply"* ]]; then
                         if cooldown; then
-                            notify 'Waydroid travou..' critical
+                            notify 'Waydroid travou.. Tentando fechar.' critical
                             bash "$(realpath "$0")" &> /dev/null & disown
                             break
                         fi
                     fi
-                done
+                done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
             fi
         else
             notify "Waydroid não rodou; dados não estão na memória ou houve algum problema na cópia." critical
             exit 1
         fi
     fi
-
 
     run_as_user systemd-run --user --scope waydroid session stop
     systemctl stop waydroid-container.service keyd.service
