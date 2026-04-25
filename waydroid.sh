@@ -401,8 +401,26 @@ connect_adb() {
 
 }
 
-if lsns | grep -E 'android|lineageos' &> /dev/null || [ "$(waydroid shell getprop sys.boot_completed)" == "1" ] || systemctl is-active "waydroid-container.service" &> /dev/null; then
+waydroid_state() {
+    if lsns | grep -E 'android|lineageos' &> /dev/null; then
+        return 0
+    fi
 
+    if systemctl is-active "waydroid-container.service" &> /dev/null; then
+        return 0
+    fi
+
+    #slow AF
+    if [ "$(waydroid shell getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+if waydroid_state; then
+
+    notify 'Fechando Waydroid..'
     run_as_user systemd-run --user --scope waydroid session stop
     systemctl stop waydroid-container.service keyd.service
 
