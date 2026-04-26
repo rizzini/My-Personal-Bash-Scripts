@@ -82,30 +82,32 @@ copy_userdata_to_mem() {
 
         yad_pid=$!
 
+        pipe_status_file="/tmp/waydroid_systemimg_pipe_status_$$"
+        rm -f "$pipe_status_file"
+
         setsid bash -c '
-        stdbuf -oL rsync -a --info=progress2 \
-        /usr/share/waydroid-extra/images/system.img /tmp/ \
-        2>&1 | tr "\r" "\n" | awk '"'"'
+        stdbuf -oL rsync -a --progress \
+            /usr/share/waydroid-extra/images/system.img \
+            /tmp/
+        exit_code=$?
+
+        echo "$exit_code" > "'"$pipe_status_file"'"
+
+        exit "$exit_code"
+        ' 2>&1 | stdbuf -oL tr '\r' '\n' | stdbuf -oL awk '
         {
-            while (match($0, /([0-9]{1,3})%/, m)) {
-                if (m[1] != last) {
-                    print m[1]
-                    fflush()
-                    last = m[1]
-                }
-                $0 = substr($0, RSTART + RLENGTH)
+            if (match($0, /([0-9]{1,3})%/, m)) {
+                print m[1]
+                fflush()
             }
         }
         END {
             print 100
+            fflush()
         }
-        '"'"' > "'"$fifo"'"
-        ' &
+        ' > "$fifo" &
 
         pipeline_pid=$!
-
-        aborted=0
-        died=0
 
         wait "$yad_pid"
         yad_status=$?
@@ -117,9 +119,15 @@ copy_userdata_to_mem() {
             wait "$pipeline_pid"
         else
             wait "$pipeline_pid"
-            pipe_status=("${PIPESTATUS[@]}")
+
+            if [ -f "$pipe_status_file" ]; then
+                pipe_status="$(cat "$pipe_status_file")"
+            else
+                pipe_status=1
+            fi
         fi
 
+        rm -f "$pipe_status_file"
         rm -f "$fifo"
 
         printf '%s\n' "${pipe_status[@]}" > /tmp/waydroid_pipe_status
@@ -207,7 +215,31 @@ copy_userdata_to_mem() {
 
     yad_pid=$!
 
-    setsid bash -c 'cd "'"$original_user_home"'"/.local/share; stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ /dev/shm/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0, /([0-9]+)%/, m)) { print m[1]; fflush() } } END { print 100 }' > "$fifo" &
+    pipe_status_file="/tmp/waydroid_pipe_status_$$"
+    rm -f "$pipe_status_file"
+
+    setsid bash -c '
+
+    cd "'"$original_user_home"'"/.local/share
+
+    stdbuf -oL rsync -a \
+        --numeric-ids \
+        --info=progress2 \
+        --no-inc-recursive \
+        waydroid/ /dev/shm/waydroid/
+
+    echo $? > "'"$pipe_status_file"'"
+    ' 2>&1 | tr '\r' '\n' | awk '
+    {
+        if (match($0, /([0-9]+)%/, m)) {
+            print m[1]
+            fflush()
+        }
+    }
+    END {
+        print 100
+    }
+    ' > "$fifo" &
 
     pipe_pid=$!
 
@@ -224,9 +256,15 @@ copy_userdata_to_mem() {
         wait "$pipe_pid"
     else
         wait "$pipe_pid"
-        pipe_status=$?
+
+        if [ -f "$pipe_status_file" ]; then
+            read -r pipe_status < "$pipe_status_file"
+        else
+            pipe_status=1
+        fi
     fi
 
+    rm -f "$pipe_status_file"
     rm -f "$fifo"
 
     if [ $aborted -eq 1 ]; then
