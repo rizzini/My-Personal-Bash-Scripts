@@ -182,12 +182,6 @@ copy_userdata_to_mem() {
         exit 1
     fi
 
-    if ! umount "$original_user_home"/.local/share/waydroid/data/media; then
-        notify "Pasta de media ainda montado. Saindo.." critical
-        rm -f "$pidfile"
-        exit 1
-    fi
-
     src_size=$(du -sb "$original_user_home"/.local/share/waydroid | awk '{print $1}')
 
     mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
@@ -274,8 +268,6 @@ copy_userdata_to_mem() {
 
         rm -rf /dev/shm/waydroid
 
-        mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media
-
         rm -rf "$original_user_home"/.local/share/waydroid_bkp
         rm -f "$pidfile"
         exit 10
@@ -292,9 +284,6 @@ copy_userdata_to_mem() {
         fi
 
         rm -rf /dev/shm/waydroid
-
-        mount --bind "$original_user_home"/.local/share/waydroid_media \
-            "$original_user_home"/.local/share/waydroid/data/media
 
         rm -rf "$original_user_home"/.local/share/waydroid_bkp
         rm -f "$pidfile"
@@ -381,20 +370,6 @@ copy_userdata_to_disk() {
         exit 1
     fi
 
-    mkdir -p "$original_user_home"/.local/share/waydroid/data/media
-
-    if ! mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media; then
-        notify "Erro ao montar bind" critical
-        rm -f "$pidfile"
-        exit 1
-    fi
-
-    if ! mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
-        notify "Bind não foi aplicado corretamente" critical
-        rm -f "$pidfile"
-        exit 1
-    fi
-
     rm -rf /dev/shm/waydroid
     rm -rf "$original_user_home"/.local/share/waydroid_bkp
     rm -f "$pidfile"
@@ -446,11 +421,6 @@ waydroid_state() {
         return 0
     fi
 
-    #slow AF
-    if [ "$(waydroid shell getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
-        return 0
-    fi
-
     return 1
 }
 
@@ -462,8 +432,15 @@ if waydroid_state; then
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk
-        data_in_mem="false"
+        data_in_mem='false'
     fi
+
+    for ((i=0; i<5; i++)); do
+        if umount "$original_user_home"/.local/share/waydroid/data/media; then
+            break
+        fi
+        sleep 0.2
+    done
 
 else
     choice=$(run_as_user yad --title="Waydroid" \
@@ -477,18 +454,18 @@ else
 
     choice=$?
 
-    copy_IMGs="false"
+    copy_IMGs='false'
     case "$choice" in
         0)
-            copy_IMGs="false"
+            copy_IMGs='false'
             copy_userdata_to_mem
-            data_in_mem=true
+            data_in_mem='true'
             ;;
 
         3)
             copy_IMGs="true"
             copy_userdata_to_mem
-            data_in_mem="true"
+            data_in_mem='true'
             ;;
 
         2|252)
@@ -496,7 +473,7 @@ else
             ;;
 
         1)
-            data_in_mem="false"
+            data_in_mem='false'
             ;;
     esac
 
@@ -505,7 +482,7 @@ else
     pkill -9 adb
 
     if [ "$choice" -eq 1 ]; then
-        if mountpoint -q "$original_user_home/.local/share/waydroid/data/media"; then
+        if mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
             notify_exit
             while IFS= read -r process; do
                 if [[ $process == *"Android with user 0 is ready"* ]]; then
@@ -519,7 +496,7 @@ else
                 fi
             done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
         else
-            notify "Waydroid não rodou; bind do diretório de mídia não está ativo." critical
+            notify "Waydroid não rodou; Pasta de dados não está montada no disco." critical
             exit 1
         fi
     else
@@ -554,7 +531,7 @@ else
                 done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
             fi
         else
-            notify "Waydroid não rodou; dados não estão na memória ou houve algum problema na cópia." critical
+            notify "Waydroid não rodou; Pasta de dados não está montada na memória." critical
             exit 1
         fi
     fi
