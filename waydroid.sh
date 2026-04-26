@@ -46,10 +46,10 @@ copy_userdata_to_mem() {
     local died=0
 
     touch "$pidfile"
-    if [ $copy_IMGs -eq 1 ]; then
+    if [ "$copy_IMGs" == 'true' ]; then
         rm -f /tmp/system.img /tmp/vendor.img
 
-        if [ "$(awk '/\<images_path\>/{print $3}' )" != '/tmp' ]; then
+        if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/tmp' ]; then
             sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
         fi
 
@@ -391,8 +391,8 @@ cooldown() {
 connect_adb() {
     (
         for ((i=0; i<5; i++)); do
-            local adb_connect="$(adb connect 192.168.240.112)"
-            if [[ "$adb_connect" == *"connected to"* ]] || [[ $adb_connect == *"already connected"* ]]; then
+            adb_connect="$(adb connect 192.168.240.112)"
+            if [[ "$adb_connect" == *"connected to"* || "$adb_connect" == *"already connected"* ]]; then
                 break
             fi
             sleep 2
@@ -426,7 +426,7 @@ if waydroid_state; then
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk
-        data_in_mem=false
+        data_in_mem="false"
     fi
 
 else
@@ -441,18 +441,18 @@ else
 
     choice=$?
 
-    copy_IMGs=0
+    copy_IMGs="false"
     case "$choice" in
         0)
-            copy_IMGs=0
+            copy_IMGs="false"
             copy_userdata_to_mem
             data_in_mem=true
             ;;
 
         3)
-            copy_IMGs=1
+            copy_IMGs="true"
             copy_userdata_to_mem
-            data_in_mem=true
+            data_in_mem="true"
             ;;
 
         2|252)
@@ -460,7 +460,7 @@ else
             ;;
 
         1)
-            data_in_mem=false
+            data_in_mem="false"
             ;;
     esac
 
@@ -488,7 +488,7 @@ else
         fi
     else
         if mountpoint -q /dev/shm/waydroid/data/media; then
-            if [ "$copy_IMGs" -eq 1 ]; then
+            if [ "$copy_IMGs" == 'true' ]; then
                 if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
                     notify_exit
                     while IFS= read -r process; do
@@ -528,6 +528,6 @@ else
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk
-        data_in_mem=false
+        data_in_mem='false'
     fi
 fi
