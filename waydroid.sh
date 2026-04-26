@@ -47,7 +47,7 @@ copy_userdata_to_mem() {
 
     touch "$pidfile"
     if [ "$copy_IMGs" == 'true' ]; then
-        rm -f /tmp/system.img /tmp/vendor.img
+        rm -f /tmp/system.img
 
         if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/tmp' ]; then
             sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
@@ -56,15 +56,13 @@ copy_userdata_to_mem() {
         echo '@@DEBUG@@'
         grep images_path /var/lib/waydroid/waydroid.cfg #debug
 
-        src1="/usr/share/waydroid-extra/images/system.img"
-        src2="/usr/share/waydroid-extra/images/vendor.img"
+        src="/usr/share/waydroid-extra/images/system.img"
 
-        size1=$(stat -c%s "$src1")
-        size2=$(stat -c%s "$src2")
+        size=$(stat -c%s "$src")
 
         mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
-        if [ $((size1 + size2 + 200000000)) -gt "$mem_free_space" ]; then
-            rm -f /tmp/system.img /tmp/vendor.img
+        if [ $((size + 200000000)) -gt "$mem_free_space" ]; then
+            rm -f /tmp/system.img
             notify "Falta de memória, não foi possível copiar as IMGs." critical
             rm -f "$pidfile"
             exit 1
@@ -86,9 +84,7 @@ copy_userdata_to_mem() {
 
         setsid bash -c '
         stdbuf -oL rsync -a --info=progress2 \
-        /usr/share/waydroid-extra/images/system.img \
-        /usr/share/waydroid-extra/images/vendor.img \
-        /tmp/ \
+        /usr/share/waydroid-extra/images/system.img /tmp/ \
         2>&1 | tr "\r" "\n" | awk '"'"'
         {
             while (match($0, /([0-9]{1,3})%/, m)) {
@@ -139,17 +135,19 @@ copy_userdata_to_mem() {
         fi
 
         if [ $aborted -eq 1 ]; then
-            rm -f /tmp/system.img /tmp/vendor.img
+            rm -f /tmp/system.img
             rm -f "$pidfile"
             exit 10
         fi
 
         if [ $died -eq 1 ]; then
             notify "Erro ao copiar imagens para memória." critical
-            rm -f /tmp/system.img /tmp/vendor.img
+            rm -f /tmp/system.img
             rm -f "$pidfile"
             exit 1
         fi
+
+        ln -sf /usr/share/waydroid-extra/images/vendor.img /tmp/
 
         touch /tmp/waydroid_IMGs_on_mem
     fi
@@ -187,7 +185,7 @@ copy_userdata_to_mem() {
     mem_free_space="$(df --output=avail -B1 /tmp | tail -n1)"
     if [ $((src_size + 200000000)) -gt "$mem_free_space" ]; then
         notify "Falta de memória, não foi possível copiar os dados do usuário. Retornar o backup manualmente." critical
-        rm -f /tmp/system.img /tmp/vendor.img
+        rm -f /tmp/system.img
         rm -f "$pidfile"
         exit 1
     fi
@@ -233,7 +231,7 @@ copy_userdata_to_mem() {
 
     if [ $aborted -eq 1 ]; then
         if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
-            rm -f /tmp/system.img /tmp/vendor.img /tmp/waydroid_IMGs_on_mem
+            rm -f /tmp/system.img  /tmp/waydroid_IMGs_on_mem
         fi
 
         rm -rf /dev/shm/waydroid
@@ -252,7 +250,7 @@ copy_userdata_to_mem() {
 
     if [ $died -eq 1 ]; then
         if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
-            rm -f /tmp/system.img /tmp/vendor.img /tmp/waydroid_IMGs_on_mem
+            rm -f /tmp/system.img  /tmp/waydroid_IMGs_on_mem
         fi
 
         rm -rf /dev/shm/waydroid
@@ -297,8 +295,8 @@ copy_userdata_to_disk() {
     grep images_path /var/lib/waydroid/waydroid.cfg #debug
 
     if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
-        rm /tmp/waydroid_IMGs_on_mem
-        rm /tmp/vendor.img /tmp/system.img
+        rm -f /tmp/waydroid_IMGs_on_mem
+        rm -f /tmp/system.img /tmp/vendor.img
     fi
 
     umount /dev/shm/waydroid/data/media
