@@ -353,16 +353,32 @@ copy_userdata_to_disk() {
 
     yad_pid=$!
 
-    setsid bash -c 'cd /dev/shm; stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/waydroid/' 2>&1 | tr '\r' '\n' | awk '{ if (match($0,/([0-9]+)%/,m)){ print m[1]; fflush() } } END{ print 100 }' > "$fifo" &
+    pipe_status_file="/tmp/waydroid_pipe_status_$$"
+    rm -f "$pipe_status_file"
+
+    setsid bash -c '
+
+    cd /dev/shm
+
+    stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/waydroid/
+
+    echo $? > "'"$pipe_status_file"'"
+
+    ' 2>&1 | tr '\r' '\n' | awk '{ if (match($0,/([0-9]+)%/,m)){ print m[1]; fflush() } } END{ print 100 }' > "$fifo" &
 
     pipe_pid=$!
 
     wait "$pipe_pid"
-    pipe_status=$?
-
     wait "$yad_pid"
 
     rm -f "$fifo"
+
+    if [ -f "$pipe_status_file" ]; then
+        read -r pipe_status < "$pipe_status_file"
+     else
+        pipe_status=1
+    fi
+
 
     if [ "$pipe_status" -ne 0 ]; then
         notify "Erro ao copiar arquivos de /dev/shm/waydroid para $original_user_home/.local/share/waydroid" critical
@@ -482,7 +498,7 @@ else
     pkill -9 adb
 
     if [ "$choice" -eq 1 ]; then
-        if mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
+        if mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media; then
             notify_exit
             while IFS= read -r process; do
                 if [[ $process == *"Android with user 0 is ready"* ]]; then
