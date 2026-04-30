@@ -26,4 +26,8 @@ fi
 
 echo "$ip" > "$cache"
 
-curl -s "https://dynupdate.no-ip.com/nic/update?hostname=${host}&myip=${ip}" --user "${user}:${password}"
+update="$(curl -s "https://dynupdate.no-ip.com/nic/update?hostname=${host}&myip=${ip}" --user "${user}:${password}")"
+
+if [[ "$update" != *"nochg"* && "$update" != *"good"* ]] ; then
+    exit 1
+fi
