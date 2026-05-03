@@ -5,9 +5,13 @@ interface="enp1s0"
 
 mkdir -p "$(dirname "$cache")"
 
-ip=$(ip -6 addr show dev "$interface" | grep 'scope global' | grep '/128' | awk '{print $2}' | cut -d/ -f1)
+ip=$(ip -6 addr show dev "$interface" | grep 'scope global' | grep '/128' | awk '{print $2}' | cut -d/ -f1| head -n1)
 
-if [ -z "$ip" ]; then
+if [[ -z "$ip" ]]; then
+  ip=$(ip -6 addr show dev "$interface" | grep 'scope global' | grep '/64' | grep -v 'temporary' | awk '{print $2}' | cut -d/ -f1 | head -n1 )
+fi
+
+if [[ -z "$ip" ]]; then
     notify-send -u critical -i network-wired "No-IP IPv6 updater" "Erro ao pegar o ip IPv6"
     exit 1
 fi
