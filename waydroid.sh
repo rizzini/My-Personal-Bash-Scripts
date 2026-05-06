@@ -19,6 +19,22 @@ run_as_user() {
         "$@"
 }
 
+manage_environment_notifications() {
+    local mode="$1"
+
+    notifications_status="$(run_as_user qdbus6 org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications.Inhibited)"
+
+    if [[ "$mode" == 'disable' ]]; then
+        if [[ "$notifications_status" == 'false' ]]; then
+            run_as_user qdbus6 org.kde.kglobalaccel /component/plasmashell invokeShortcut "toggle do not disturb"
+        fi
+    elif [[ "$mode" == 'enable' ]]; then
+        if [[ "$notifications_status" == 'true' ]]; then
+            run_as_user qdbus6 org.kde.kglobalaccel /component/plasmashell invokeShortcut "toggle do not disturb"
+        fi
+    fi
+}
+
 notify() {
     if [ "$2" == critical ]; then
         run_as_user systemd-run --user --scope notify-send -u critical "$1"
@@ -392,8 +408,8 @@ copy_userdata_to_disk() {
 }
 
 notify_exit() {
-    trap 'notify "Waydroid encerrado de forma inesperada." critical' INT TERM
-    trap 'notify "Waydroid encerrado."' EXIT
+    trap 'notify "Waydroid encerrado de forma inesperada." critical; manage_environment_notifications enable' INT TERM
+    trap 'notify "Waydroid encerrado."; manage_environment_notifications enable' EXIT
 }
 
 cooldown() {
@@ -502,6 +518,7 @@ else
             notify_exit
             while IFS= read -r process; do
                 if [[ $process == *"Android with user 0 is ready"* ]]; then
+                    manage_environment_notifications disable
                     connect_adb
                 elif [[ $process == *"Did not receive a reply"* ]]; then
                     if cooldown; then
@@ -522,6 +539,7 @@ else
                     notify_exit
                     while IFS= read -r process; do
                         if [[ $process == *"Android with user 0 is ready"* ]]; then
+                            manage_environment_notifications disable
                             connect_adb
                         elif [[ $process == *"Did not receive a reply"* ]]; then
                             if cooldown; then
@@ -536,6 +554,7 @@ else
                 notify_exit
                 while IFS= read -r process; do
                     if [[ $process == *"Android with user 0 is ready"* ]]; then
+                        manage_environment_notifications disable
                         connect_adb
                     elif [[ $process == *"Did not receive a reply"* ]]; then
                         if cooldown; then
@@ -552,6 +571,7 @@ else
         fi
     fi
 
+    manage_environment_notifications enable
     run_as_user systemd-run --user --scope waydroid session stop
     systemctl stop waydroid-container.service keyd.service
 
