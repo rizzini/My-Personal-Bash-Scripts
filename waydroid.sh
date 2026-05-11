@@ -1,10 +1,33 @@
 #!/bin/bash
 
+if [ "$EUID" -ne 0 ]; then
+    echo "Rodar script do Waydroid como root."
+    exit 1
+fi
+
+waydroid_state() {
+    if lsns | grep -E 'android|lineageos' &> /dev/null; then
+        return 0
+    fi
+
+    if systemctl is-active "waydroid-container.service" &> /dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+if waydroid_state; then
+    instance_mode="open"
+else
+    instance_mode="close"
+fi
+
 if [ ! -d "/tmp/waydroid_logs" ]; then
     mkdir -p /tmp/waydroid_logs
 fi
 
-logfile="/tmp/waydroid_logs/waydroid_personal_script_log_$(date +%H_%M_%S)_$$_$RANDOM.log"
+logfile="/tmp/waydroid_logs/waydroid_${instance_mode}_$(date +%H_%M_%S)_$$_$RANDOM.log"
 exec > >(tee -a "$logfile") 2>&1
 set -x
 
@@ -36,18 +59,25 @@ manage_environment_notifications() {
 }
 
 notify() {
-    if [ "$2" == critical ]; then
-        run_as_user systemd-run --user --scope notify-send -u critical "$1"
-    elif [ -z "$2" ]; then
-        run_as_user systemd-run --user --scope notify-send "$1"
+    local message="$1"
+    local urgency="$2"
+
+    if [ "$urgency" == critical ]; then
+        (
+            open_latest_log=$(find /tmp/waydroid_logs -maxdepth 1 -type f -name 'waydroid_open_*' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)
+
+            action=$(run_as_user systemd-run --user --scope --quiet notify-send -u critical -t 0 "$message" -A "open_log=Abrir log")
+
+            if [[ "$action" == "open_log" ]]; then
+                if [[ -n "$open_latest_log" ]]; then
+                    run_as_user kate "$open_latest_log"
+                fi
+            fi
+        ) & disown
+    else
+        run_as_user systemd-run --user --scope --quiet notify-send "$message"
     fi
 }
-
-if [ "$EUID" -ne 0 ]; then
-    echo "Rodar como root."
-    notify "Rodar como root." critical
-    exit 1
-fi
 
 pidfile="/tmp/waydroid_sync.pid"
 if [ -f "$pidfile" ]; then
@@ -442,18 +472,6 @@ connect_adb() {
         done
     ) &> /dev/null &
 
-}
-
-waydroid_state() {
-    if lsns | grep -E 'android|lineageos' &> /dev/null; then
-        return 0
-    fi
-
-    if systemctl is-active "waydroid-container.service" &> /dev/null; then
-        return 0
-    fi
-
-    return 1
 }
 
 if waydroid_state; then
