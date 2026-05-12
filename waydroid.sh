@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Rodar script do Waydroid como root."
+    echo "Rode script do Waydroid como root."
     exit 1
 fi
 
@@ -17,17 +17,17 @@ waydroid_state() {
     return 1
 }
 
-if waydroid_state; then
-    instance_mode="open"
-else
-    instance_mode="close"
-fi
-
 if [ ! -d "/tmp/waydroid_logs" ]; then
     mkdir -p /tmp/waydroid_logs
 fi
 
-logfile="/tmp/waydroid_logs/waydroid_${instance_mode}_$(date +%H_%M_%S)_$$_$RANDOM.log"
+if waydroid_state; then
+    instance_mode="closing"
+else
+    instance_mode="openning"
+fi
+
+logfile="/tmp/waydroid_logs/${instance_mode}_waydroid_$(date +%H_%M_%S)_$$_$RANDOM.log"
 exec > >(tee -a "$logfile") 2>&1
 set -x
 
@@ -64,7 +64,7 @@ notify() {
 
     if [ "$urgency" == critical ]; then
         (
-            open_latest_log=$(find /tmp/waydroid_logs -maxdepth 1 -type f -name 'waydroid_open_*' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)
+            open_latest_log=$(find /tmp/waydroid_logs -maxdepth 1 -type f -name 'openning_waydroid_*' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)
 
             action=$(run_as_user systemd-run --user --scope --quiet notify-send -u critical -t 0 "$message" -A "open_log=Abrir log")
 
