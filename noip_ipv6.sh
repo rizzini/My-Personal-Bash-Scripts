@@ -30,12 +30,17 @@ fi
 
 echo "$ip" > "$cache"
 
+status=0
+
 if ! $HOME/scripts/update_dmz_addr.py -6 "$ip" 1>/dev/null; then
     notify-send -u critical -i network-wired "No-IP IPv6 updater" "Erro ao configurar DMZ."
+    status=1
 fi
 
 update="$(curl -s "https://dynupdate.no-ip.com/nic/update?hostname=${host}&myip=${ip}" --user "${user}:${password}")"
 
 if [[ "$update" != *"nochg"* && "$update" != *"good"* ]] ; then
-    exit 1
+    status=1
 fi
+
+exit "$status"
