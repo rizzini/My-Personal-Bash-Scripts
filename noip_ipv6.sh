@@ -12,7 +12,7 @@ if [[ -z "$ip" ]]; then
 fi
 
 if [[ -z "$ip" ]]; then
-    notify-send -u critical -i network-wired "No-IP IPv6 updater" "Erro ao pegar o ip IPv6"
+    notify-send -u critical -i network-wired "No-IP IPv6 updater" "Erro ao pegar o ip IPv6."
     exit 1
 fi
 
@@ -29,6 +29,10 @@ if [ -f "$cache" ] && grep -q "$ip" "$cache"; then
 fi
 
 echo "$ip" > "$cache"
+
+if ! $HOME/scripts/update_dmz_addr.py -6 "$ip" 1>/dev/null; then
+    notify-send -u critical -i network-wired "No-IP IPv6 updater" "Erro ao configurar DMZ."
+fi
 
 update="$(curl -s "https://dynupdate.no-ip.com/nic/update?hostname=${host}&myip=${ip}" --user "${user}:${password}")"
 
