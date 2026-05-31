@@ -10,7 +10,7 @@ enable_zram() {
     echo 4G > /sys/block/zram0/disksize
     mkswap -U clear /dev/zram0
     swapon --discard --priority 100 /dev/zram0
-    swapon --priority 1 /dev/sda8
+    swapon --priority 1 /dev/sdb8
     sysctl -w vm.watermark_boost_factor=0 vm.watermark_scale_factor=100 vm.page-cluster=0 vm.swappiness=10 vm.vfs_cache_pressure=50
 }
 disable_zram() {

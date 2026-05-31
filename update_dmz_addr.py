@@ -43,7 +43,6 @@ def load_credentials():
         print(e.stderr)
         sys.exit(1)
 
-
 parser = argparse.ArgumentParser()
 
 parser.add_argument(

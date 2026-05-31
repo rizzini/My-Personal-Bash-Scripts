@@ -99,10 +99,7 @@ copy_userdata_to_mem() {
             sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
         fi
 
-        echo '@@DEBUG@@'
-        grep images_path /var/lib/waydroid/waydroid.cfg #debug
-
-        src="/usr/share/waydroid-extra/images/system.img"
+        src="/usr/share/waydroid-extra/images/${container_profile}/system.img"
 
         size=$(stat -c%s "$src")
 
@@ -129,12 +126,16 @@ copy_userdata_to_mem() {
         yad_pid=$!
 
         pipe_status_file="/tmp/waydroid_systemimg_pipe_status_$$"
-        rm -f "$pipe_status_file"
+
+        container_profile_file="/tmp/waydroid_profile_$$"
+        echo "$container_profile" > "$container_profile_file"
 
         setsid bash -c '
-        stdbuf -oL rsync -a --progress \
-            /usr/share/waydroid-extra/images/system.img \
-            /tmp/
+
+        container_profile=$(</tmp/waydroid_profile_*)
+
+        stdbuf -oL rsync -a --progress /usr/share/waydroid-extra/images/"'"${container_profile}"'"/system.img /tmp/
+
         exit_code=$?
 
         echo "$exit_code" > "'"$pipe_status_file"'"
@@ -173,19 +174,16 @@ copy_userdata_to_mem() {
             fi
         fi
 
+        rm -f "$container_profile_file"
         rm -f "$pipe_status_file"
         rm -f "$fifo"
-
-        printf '%s\n' "${pipe_status[@]}" > /tmp/waydroid_pipe_status
 
         if [ "$yad_status" -eq 1 ] || [ "$yad_status" -eq 252 ]; then
             aborted=1
         else
-            for pipe_exit_code in "${pipe_status[@]}"; do
-                if [ "$pipe_exit_code" -ne 0 ]; then
-                    died=1
-                fi
-            done
+            if [ "$pipe_status" -ne 0 ]; then
+                died=1
+            fi
         fi
 
         if [ $aborted -eq 1 ]; then
@@ -201,24 +199,26 @@ copy_userdata_to_mem() {
             exit 1
         fi
 
-        ln -sf /usr/share/waydroid-extra/images/vendor.img /tmp/
+        ln -sf /usr/share/waydroid-extra/images/"${container_profile}"/vendor.img /tmp/
 
         touch /tmp/waydroid_IMGs_on_mem
     fi
 
-    if [[ -e "$original_user_home"/.local/share/waydroid_bkp || -e /dev/shm/waydroid ]]; then
+    mem_mount="$(findmnt -no FSTYPE "$original_user_home/.local/share/waydroid")"
+
+    if [[ -e "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp || "$mem_mount" == 'tmpfs' ]]; then
         msg="Erro: "
         exists=""
 
-        if [[ -e "$original_user_home"/.local/share/waydroid_bkp ]]; then
-            exists+="$original_user_home/.local/share/waydroid_bkp"
+        if [[ -e "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp ]]; then
+            exists+="${original_user_home}/.local/share/WAYDROID_CONTAINERS/${container_profile}/waydroid_bkp"
         fi
 
-        if [[ -e "$original_user_home"/.local/share/waydroid_bkp && -e /dev/shm/waydroid ]]; then
+        if [[ -e "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp && "$mem_mount" == 'tmpfs' ]]; then
             exists+=", "
         fi
 
-        if [[ -e /dev/shm/waydroid ]]; then
+        if [[ "$mem_mount" == 'tmpfs' ]]; then
             exists+="/dev/shm/waydroid"
         fi
 
@@ -256,11 +256,15 @@ copy_userdata_to_mem() {
     yad_pid=$!
 
     pipe_status_file="/tmp/waydroid_pipe_status_$$"
-    rm -f "$pipe_status_file"
+
+    container_profile_file="/tmp/waydroid_profile_$$"
+    echo "$container_profile" > "$container_profile_file"
 
     setsid bash -c '
 
-    cd "'"$original_user_home"'"/.local/share
+    container_profile=$(</tmp/waydroid_profile_*)
+
+    cd "'"$original_user_home"'"/.local/share/WAYDROID_CONTAINERS/"'"$container_profile"'"
 
     stdbuf -oL rsync -a \
         --numeric-ids \
@@ -305,6 +309,7 @@ copy_userdata_to_mem() {
     fi
 
     rm -f "$pipe_status_file"
+    rm -f "$container_profile_file"
     rm -f "$fifo"
 
     if [ $aborted -eq 1 ]; then
@@ -314,7 +319,7 @@ copy_userdata_to_mem() {
 
         rm -rf /dev/shm/waydroid
 
-        rm -rf "$original_user_home"/.local/share/waydroid_bkp
+        rm -rf "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp
         rm -f "$pidfile"
         exit 10
     fi
@@ -331,41 +336,20 @@ copy_userdata_to_mem() {
 
         rm -rf /dev/shm/waydroid
 
-        rm -rf "$original_user_home"/.local/share/waydroid_bkp
+        rm -rf "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp
         rm -f "$pidfile"
 
         notify "Erro copiando dados para a memória.."
         exit 1
     fi
 
-    mv "$original_user_home"/.local/share/waydroid "$original_user_home"/.local/share/waydroid_bkp
+    mv "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp
 
-    ln -s /dev/shm/waydroid "$original_user_home"/.local/share/waydroid
-
-    mkdir -p /dev/shm/waydroid/data/media
-
-    if ! mount --bind "$original_user_home"/.local/share/waydroid_media /dev/shm/waydroid/data/media; then
-        notify "Erro ao montar bind (memória)" critical
-        rm -f "$pidfile"
-        exit 1
-    fi
-
-    if ! mountpoint -q /dev/shm/waydroid/data/media; then
-        notify "Bind na memória não foi aplicado corretamente"
-        rm -f "$pidfile"
-        exit 1
-    fi
     rm -f "$pidfile"
 }
 
 copy_userdata_to_disk() {
     touch "$pidfile"
-
-    if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/usr/share/waydroid-extra/images' ]; then
-        sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/usr/share/waydroid-extra/images|' /var/lib/waydroid/waydroid.cfg
-    fi
-
-    grep images_path /var/lib/waydroid/waydroid.cfg #debug
 
     if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
         rm -f /tmp/waydroid_IMGs_on_mem
@@ -373,14 +357,6 @@ copy_userdata_to_disk() {
     fi
 
     umount /dev/shm/waydroid/data/media
-
-    if [ -L "$original_user_home/.local/share/waydroid" ]; then
-        rm -f "$original_user_home"/.local/share/waydroid
-    else
-        notify "Erro na restauração! Verifique manualmente. Dados ainda na memória." critical
-        rm -f "$pidfile"
-        exit 1
-    fi
 
     fifo="/tmp/waydroid_progress_fifo_$$"
     mkfifo "$fifo"
@@ -402,11 +378,16 @@ copy_userdata_to_disk() {
     pipe_status_file="/tmp/waydroid_pipe_status_$$"
     rm -f "$pipe_status_file"
 
+    container_profile_file="/tmp/waydroid_profile_$$"
+    echo "$container_profile" > "$container_profile_file"
+
     setsid bash -c '
+
+    container_profile=$(</tmp/waydroid_profile_*)
 
     cd /dev/shm
 
-    stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/waydroid/
+    stdbuf -oL rsync -a --numeric-ids --info=progress2 --no-inc-recursive waydroid/ "'"$original_user_home"'"/.local/share/WAYDROID_CONTAINERS/"'"${container_profile}"'"/waydroid/
 
     echo $? > "'"$pipe_status_file"'"
 
@@ -417,23 +398,24 @@ copy_userdata_to_disk() {
     wait "$pipe_pid"
     wait "$yad_pid"
 
-    rm -f "$fifo"
-
     if [ -f "$pipe_status_file" ]; then
         read -r pipe_status < "$pipe_status_file"
      else
         pipe_status=1
     fi
 
+    rm -f "$container_profile_file"
+    rm -f "$pipe_status_file"
+    rm -f "$fifo"
 
     if [ "$pipe_status" -ne 0 ]; then
-        notify "Erro ao copiar arquivos de /dev/shm/waydroid para $original_user_home/.local/share/waydroid" critical
+        notify "Erro ao copiar arquivos de /dev/shm/waydroid para ${original_user_home}/.local/share/WAYDROID_CONTAINERS/${container_profile}/waydroid" critical
         rm -f "$pidfile"
         exit 1
     fi
 
     rm -rf /dev/shm/waydroid
-    rm -rf "$original_user_home"/.local/share/waydroid_bkp
+    rm -rf "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_bkp
     rm -f "$pidfile"
 }
 
@@ -474,6 +456,42 @@ connect_adb() {
 
 }
 
+cleanup() {
+    if mountpoint -q "$original_user_home"/.local/share/waydroid/data/media; then
+        for ((i=0; i<5; i++)); do
+            if umount "$original_user_home"/.local/share/waydroid/data/media; then
+                break
+            fi
+            sleep 0.2
+        done
+    fi
+
+    if mountpoint -q "$original_user_home"/.local/share/waydroid; then
+        for ((i=0; i<5; i++)); do
+            if umount "$original_user_home"/.local/share/waydroid; then
+                break
+            fi
+            sleep 0.2
+        done
+    fi
+
+    if [[ -f "$container_profile_file" ]]; then
+        rm -f "$container_profile_file"
+    fi
+
+    if [[ -f "$fifo" ]]; then
+        rm -f "$fifo"
+    fi
+
+    if [[ -f "$pidfile" ]]; then
+        rm -f "$pidfile"
+    fi
+
+
+}
+
+trap cleanup EXIT INT TERM
+
 if waydroid_state; then
 
     notify 'Fechando Waydroid..'
@@ -485,76 +503,109 @@ if waydroid_state; then
         data_in_mem='false'
     fi
 
-    for ((i=0; i<5; i++)); do
-        if umount "$original_user_home"/.local/share/waydroid/data/media; then
-            break
-        fi
-        sleep 0.2
-    done
-
 else
-    choice=$(run_as_user yad --title="Waydroid" \
+    containers=$(find "$original_user_home/.local/share/WAYDROID_CONTAINERS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r | tr '\n' '!' | sed 's/!$//')
+    result=$(run_as_user yad \
+        --title="Waydroid" \
+        --height=150 \
         --center \
-        --question \
-        --text="Copiar dados para a memória?" \
-        --button=Não:1 \
-        --button=Sim:0 \
-        --button='Sim + IMGs':3 \
-        --button=Cancelar:2)
+        --form \
+        --field="Container::CB" "$containers" \
+        --field="Copiar dados p/ mem::CB" "Não!Dados!Dados + Img" \
+        --button="Cancelar:1" \
+        --button="OK:0")
 
-    choice=$?
+    ret=$?
+
+    if [[ "$ret" -eq 1 || "$ret" -eq 2 || "$ret" -eq 252 ]]; then
+        exit
+    fi
+
+    container_profile=$(echo "$result" | cut -d'|' -f1)
+    io_mode=$(echo "$result" | cut -d'|' -f2)
 
     copy_IMGs='false'
-    case "$choice" in
-        0)
+    case "$io_mode" in
+        Dados)
             copy_IMGs='false'
             copy_userdata_to_mem
             data_in_mem='true'
             ;;
 
-        3)
+        'Dados + Img')
             copy_IMGs="true"
             copy_userdata_to_mem
             data_in_mem='true'
             ;;
-
-        2|252)
-            exit
-            ;;
-
-        1)
+        Não)
             data_in_mem='false'
             ;;
     esac
 
-    systemctl restart waydroid-container.service keyd.service
-
     pkill -9 adb
 
-    if [ "$choice" -eq 1 ]; then
-        if mount --bind "$original_user_home"/.local/share/waydroid_media "$original_user_home"/.local/share/waydroid/data/media; then
-            notify_exit
-            while IFS= read -r process; do
-                if [[ $process == *"Android with user 0 is ready"* ]]; then
-                    manage_environment_notifications disable
-                    connect_adb
-                elif [[ $process == *"Did not receive a reply"* ]]; then
-                    if cooldown; then
-                        notify 'Waydroid travou.. Tentando fechar.' critical
-                        bash "$(realpath "$0")" &> /dev/null & disown
-                        break
+    systemctl stop waydroid-container.service
+
+    sed -i 's|^images_path *=.*|images_path = /usr/share/waydroid-extra/images/'"$container_profile"'/|' /var/lib/waydroid/waydroid.cfg
+
+    umount "$original_user_home"/.local/share/waydroid/data/media 2>/dev/null
+
+    umount "$original_user_home"/.local/share/waydroid 2>/dev/null
+
+    if [[ "$io_mode" == 'Não' ]]; then
+        if mount --bind "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid  "$original_user_home"/.local/share/waydroid; then
+            if mount --bind "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_media  "$original_user_home"/.local/share/waydroid/data/media; then
+                notify_exit
+                systemctl start waydroid-container.service keyd.service
+                while IFS= read -r process; do
+                    if [[ $process == *"Android with user 0 is ready"* ]]; then
+                        manage_environment_notifications disable
+                        connect_adb
+                    elif [[ $process == *"Did not receive a reply"* ]]; then
+                        if cooldown; then
+                            notify 'Waydroid travou.. Tentando fechar.' critical
+                            bash "$(realpath "$0")" &> /dev/null & disown
+                            break
+                        fi
+                    elif [[ "$process" == *"RuntimeError"* ]]; then
+                        notify "Processo do Waydroid apresentou erro na execução." critical
+                        exit 1
                     fi
-                fi
-            done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
+                done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
+            else
+                notify "Waydroid não rodou; Pasta de media não montada no disco." critical
+                exit 1
+            fi
         else
-            notify "Waydroid não rodou; Pasta de dados não está montada no disco." critical
+            notify "Waydroid não rodou; Pasta de dados não montada no disco." critical
             exit 1
         fi
     else
-        if mountpoint -q /dev/shm/waydroid/data/media; then
-            if [ "$copy_IMGs" == 'true' ]; then
-                if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
+        if mount --bind /dev/shm/waydroid  "$original_user_home"/.local/share/waydroid; then
+            if mount --bind "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_media  /dev/shm/waydroid/data/media; then
+                if [ "$copy_IMGs" == 'true' ]; then
+                    if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
+                        notify_exit
+                        systemctl start waydroid-container.service keyd.service
+                        while IFS= read -r process; do
+                            if [[ $process == *"Android with user 0 is ready"* ]]; then
+                                manage_environment_notifications disable
+                                connect_adb
+                            elif [[ $process == *"Did not receive a reply"* ]]; then
+                                if cooldown; then
+                                    notify 'Waydroid travou.. Tentando fechar.' critical
+                                    bash "$(realpath "$0")" &> /dev/null & disown
+                                    break
+                                fi
+                            elif [[ "$process" == *"RuntimeError"* ]]; then
+                                notify "Processo do Waydroid apresentou erro na execução." critical
+                                exit 1
+                            fi
+                        done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
+                    fi
+                else
                     notify_exit
+                    systemctl start waydroid-container.service keyd.service
                     while IFS= read -r process; do
                         if [[ $process == *"Android with user 0 is ready"* ]]; then
                             manage_environment_notifications disable
@@ -569,22 +620,11 @@ else
                     done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
                 fi
             else
-                notify_exit
-                while IFS= read -r process; do
-                    if [[ $process == *"Android with user 0 is ready"* ]]; then
-                        manage_environment_notifications disable
-                        connect_adb
-                    elif [[ $process == *"Did not receive a reply"* ]]; then
-                        if cooldown; then
-                            notify 'Waydroid travou.. Tentando fechar.' critical
-                            bash "$(realpath "$0")" &> /dev/null & disown
-                            break
-                        fi
-                    fi
-                done < <(run_as_user systemd-run --user --scope waydroid show-full-ui 2>&1)
+                notify "Waydroid não rodou; Pasta de media não montada na memória." critical
+                exit
             fi
         else
-            notify "Waydroid não rodou; Pasta de dados não está montada na memória." critical
+            notify "Waydroid não rodou; Pasta de dados não montada na memória." critical
             exit 1
         fi
     fi
