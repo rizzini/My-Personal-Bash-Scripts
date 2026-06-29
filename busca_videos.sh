@@ -204,11 +204,6 @@ do_search() {
         return
     fi
 
-    if command -v notify-send &>/dev/null; then
-        notify-send -u normal "🏴‍☠️ busca_videos" \
-            "${count} resultado(s) novo(s) para \"${query}\"\nAbrindo seleção..."
-    fi
-
     local -a yad_rows=()
     local -a intercalado_dl=()
     for i in "${!new_titles[@]}"; do
@@ -218,8 +213,8 @@ do_search() {
 
     local selected exit_code
     selected=$(yad \
-        --title="🏴‍☠️  busca_videos — \"${query}\"" \
-        --text="<b>${count} resultado(s) encontrado(s).</b>\nMarque os que deseja <u>adicionar à blacklist</u> permanentemente." \
+        --title="busca_videos — \"${query}\"" \
+        --text="<b>${count} resultado(s) encontrado(s).</b>\nMarque os que deseja <u>adicionar à blacklist</u>:" \
         --list \
         --checklist \
         --print-all \
