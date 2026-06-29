@@ -3,65 +3,6 @@ interface='enp1s0'
 
 if_status="$(ip a show "$interface" | awk 'NR == 1 {print $9; exit}')"
 
-# script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# history_file="$script_dir/.taskbar_change_route_isp.txt"
-# history_file_boot="$script_dir/.taskbar_change_route_isp_boot.txt"
-
-# new_route_tmp="/tmp/getting_new_route.tmp"
-
-# if [ "$1" == 'startup_apply_last_used_route' ]; then
-#     history="$(< "$history_file_boot")"
-#
-#     # Configuração da tabela TIM
-#     ip route add 192.168.1.0/24 dev "$interface" table tim
-#     ip route add default via 192.168.1.1 table tim
-#
-#     # Configuração da tabela VIVO
-#     ip route add 192.168.15.0/24 dev "$interface" table vivo
-#     ip route add default via 192.168.15.1 table vivo
-#
-#     #Policy Rules
-#     ip rule add from 192.168.1.141 table tim
-#     ip rule add from 192.168.15.199 table vivo
-#
-#     ip route replace default via "$history"
-#
-#     exit
-# elif [ "$1" == 'click' ]; then
-#
-#     current="$(ip route show default | awk '{print $3}')"
-#     old="$(< "$history_file")"
-#
-#     if [ "$current" != "$old" ] || [ -f "$new_route_tmp" ]; then
-#         if [ "$current" = '192.168.1.1' ]; then
-#             sudo ip route replace default via 192.168.15.1
-#             echo "$current" > "$history_file"
-#             echo "$old" > "$history_file_boot"
-#
-#         elif [ "$current" = '192.168.15.1' ]; then
-#             sudo ip route replace default via 192.168.1.1
-#             echo "$current" > "$history_file"
-#             echo "$old" > "$history_file_boot"
-#
-#         elif [ -f "$new_route_tmp" ]; then
-#             if [ "$old" = '192.168.1.1' ]; then
-#                 sudo ip route replace default via '192.168.15.1'
-#                 rm -f "$new_route_tmp"
-#                 notify-send -i network-wired "Rede" "Rota restabelecida usando script taskbar_network_speed_monitor.sh"
-#
-#             elif [ "$old" = '192.168.15.1' ]; then
-#                 sudo ip route replace default via '192.168.1.1'
-#                 rm -f "$new_route_tmp"
-#                 notify-send -i network-wired "Rede" "Rota restabelecida usando script taskbar_network_speed_monitor.sh"
-#
-#             fi
-#
-#         fi
-#
-#     fi
-#     exit
-# fi
-
 convert_units() {
     local unit_mode=$1
     local is_speed=$2
@@ -127,24 +68,6 @@ if [ "$1" = "hover" ]; then
    read -r rx tx < <(awk -v i="$interface" '$1==i":" {print $2, $10}' /proc/net/dev)
 
     uptime_str=$(format_uptime)
-
-    # route="$(ip route show default | awk '{print $3}')"
-    # if [ "$route" == '192.168.1.1' ]; then
-    #     ISP_str='TIM'
-    # elif [ "$route" == '192.168.15.1' ]; then
-    #     ISP_str='VIVO'
-    # elif [ "$if_status" != 'UP' ]; then
-    #     ISP_str="$interface DOWN"
-    # elif [ -z "$route" ]; then
-    #     ISP_str="NO ROUTE"
-    #     if [ ! -f "$new_route_tmp" ];then
-    #         touch "$new_route_tmp"
-    #         bash "$0" 'click' #get new route
-    #
-    #     fi
-    # else
-    #     ISP_str='UNKOWN'
-    # fi
 
     output="+Total+ | Uptime: $uptime_str
 Download: $(convert_units 3 0 "$rx") | Upload: $(convert_units 3 0 "$tx")"
