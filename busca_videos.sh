@@ -4,6 +4,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_FILE="$SCRIPT_DIR/busca_videos.conf"
 PIRATEBAY_CMD="${PIRATEBAY_CMD:-piratebay}"
 PIRATEBAY_TIMEOUT="${PIRATEBAY_TIMEOUT:-15}"
+PARALLEL_JOBS="${PARALLEL_JOBS:-4}"
+FETCH_TMPDIR=""
 
 check_conf() {
     if [[ ! -f "$CONF_FILE" ]]; then
@@ -73,6 +75,13 @@ add_to_blacklist() {
 }
 
 parse_and_run() {
+    FETCH_TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$FETCH_TMPDIR"' EXIT INT TERM
+
+    local -a queries=()
+    local -a bl_counts=()
+    local -a all_blacklists=()
+
     local current_query=""
     local -a current_blacklist=()
 
@@ -82,7 +91,9 @@ parse_and_run() {
 
         if [[ "$line" =~ ^[[:space:]]*\"(.+)\":[[:space:]]*$ ]]; then
             if [[ -n "$current_query" ]]; then
-                do_search "$current_query" "${current_blacklist[@]+"${current_blacklist[@]}"}"
+                queries+=("$current_query")
+                bl_counts+=("${#current_blacklist[@]}")
+                all_blacklists+=("${current_blacklist[@]+"${current_blacklist[@]}"}")
             fi
             current_query="${BASH_REMATCH[1]}"
             current_blacklist=()
@@ -94,8 +105,58 @@ parse_and_run() {
     done < "$CONF_FILE"
 
     if [[ -n "$current_query" ]]; then
-        do_search "$current_query" "${current_blacklist[@]+"${current_blacklist[@]}"}"
+        queries+=("$current_query")
+        bl_counts+=("${#current_blacklist[@]}")
+        all_blacklists+=("${current_blacklist[@]+"${current_blacklist[@]}"}")
     fi
+
+    local total=${#queries[@]}
+    [[ $total -eq 0 ]] && return
+
+    local -a pids=()
+    local -a slots=()
+    local bl_offset=0
+    local running=0
+
+    echo "Iniciando $total busca(s) em paralelo (máx ${PARALLEL_JOBS} simultâneas)..."
+
+    for (( i=0; i<total; i++ )); do
+        local n_bl="${bl_counts[$i]}"
+        local -a bl_slice=()
+        if (( n_bl > 0 )); then
+            bl_slice=("${all_blacklists[@]:$bl_offset:$n_bl}")
+        fi
+        bl_offset=$(( bl_offset + n_bl ))
+
+        while (( running >= PARALLEL_JOBS )); do
+            local freed=0
+            for (( j=0; j<i; j++ )); do
+                [[ -z "${pids[$j]:-}" ]] && continue
+                if ! kill -0 "${pids[$j]}" 2>/dev/null; then
+                    wait "${pids[$j]}" 2>/dev/null || true
+                    pids[$j]=""
+                    (( running-- )) || true
+                    freed=1
+                    break
+                fi
+            done
+            (( freed )) || sleep 0.1
+        done
+
+        fetch_search "$i" "${queries[$i]}" "${bl_slice[@]+"${bl_slice[@]}"}" &
+        pids[$i]=$!
+        (( running++ )) || true
+    done
+
+    echo "Aguardando conclusão das buscas..."
+    for (( i=0; i<total; i++ )); do
+        [[ -n "${pids[$i]:-}" ]] && wait "${pids[$i]}" 2>/dev/null || true
+    done
+    echo "Todas as buscas concluídas. Abrindo resultados..."
+
+    for (( i=0; i<total; i++ )); do
+        display_search "$i"
+    done
 }
 
 abrir_menu_download() {
@@ -158,54 +219,92 @@ run_piratebay() {
     echo "$output"
 }
 
-do_search() {
-    local query="$1"
-    shift
+fetch_search() {
+    local slot="$1"
+    local query="$2"
+    shift 2
     local blacklist=("$@")
+
+    local out_raw="$FETCH_TMPDIR/${slot}.raw"
+    local out_bl="$FETCH_TMPDIR/${slot}.blacklist"
+    local out_query="$FETCH_TMPDIR/${slot}.query"
+    local out_err="$FETCH_TMPDIR/${slot}.err"
+
+    printf '%s' "$query" > "$out_query"
+    printf '%s\n' "${blacklist[@]+"${blacklist[@]}"}" > "$out_bl"
 
     echo "Buscando por: \"$query\""
 
     local raw
-    if ! raw=$(run_piratebay search "$query" --json); then
+    if ! raw=$(run_piratebay search "$query" --json 2>"$out_err"); then
+        echo "  ERRO na busca de \"$query\" — veja ${out_err}" >&2
+        touch "$FETCH_TMPDIR/${slot}.done"
         return
     fi
 
     if [[ -z "$raw" ]] || ! echo "$raw" | jq empty 2>/dev/null; then
-        echo "  ERRO: resposta inválida (não é JSON)." >&2
+        echo "  ERRO: resposta inválida para \"$query\" (não é JSON)." >&2
+        touch "$FETCH_TMPDIR/${slot}.done"
         return
     fi
 
-    local -a new_titles=()
-    local -a new_ids=()
-    local -a new_sizes=()
-    local -a new_seeds=()
-    local -a new_leechers=()
+    echo "$raw" | jq -r \
+        '.[] | select((.category // .Category // "0") | tonumber? // 0 | . >= 200 and . <= 299)
+         | [ (.id // .Id // ""),
+             ((.name // .Name // .title // .Title // "") | gsub("^\\s+|\\s+$"; "")),
+             (.size // .Size // "0"),
+             (.seeders // .Seeders // .seeds // "0"),
+             (.leechers // .Leechers // .leech // "0") ]
+         | @tsv' > "$out_raw"
 
-    while IFS=$'\t' read -r id title size seeds leechers; do
-        [[ -z "$title" ]] && continue
-        local blocked=0
-        for entry in "${blacklist[@]+"${blacklist[@]}"}"; do
-            [[ "$title" == $entry ]] && blocked=1 && break
-        done
-        [[ $blocked -eq 1 ]] && continue
+    touch "$FETCH_TMPDIR/${slot}.done"
+}
 
-        new_titles+=("$title")
-        new_ids+=("$id")
-        new_sizes+=("$(convert_units "$size")")
-        new_seeds+=("$seeds")
-        new_leechers+=("$leechers")
-    done < <(echo "$raw" | jq -r '.[] | select((.category // .Category // "0") | tonumber? // 0 | . >= 200 and . <= 299) | [ (.id // .Id // ""), ((.name // .Name // .title // .Title // "") | gsub("^\\s+|\\s+$"; "")), (.size // .Size // "N/A"), (.seeders // .Seeders // .seeds // "0"), (.leechers // .Leechers // .leech // "0") ] | @tsv')
+display_search() {
+    local slot="$1"
+
+    local out_raw="$FETCH_TMPDIR/${slot}.raw"
+    local out_bl="$FETCH_TMPDIR/${slot}.blacklist"
+    local out_query="$FETCH_TMPDIR/${slot}.query"
+
+    local query
+    query=$(<"$out_query")
+
+    local -a blacklist=()
+    if [[ -s "$out_bl" ]]; then
+        while IFS= read -r entry; do
+            [[ -n "$entry" ]] && blacklist+=("$entry")
+        done < "$out_bl"
+    fi
+
+    local -a new_titles=() new_ids=() new_sizes=() new_seeds=() new_leechers=()
+
+    if [[ -s "$out_raw" ]]; then
+        while IFS=$'\t' read -r id title size seeds leechers; do
+            [[ -z "$title" ]] && continue
+            local blocked=0
+            for entry in "${blacklist[@]+"${blacklist[@]}"}"; do
+                [[ "$title" == $entry ]] && blocked=1 && break
+            done
+            [[ $blocked -eq 1 ]] && continue
+
+            new_titles+=("$title")
+            new_ids+=("$id")
+            new_sizes+=("$(convert_units "$size")")
+            new_seeds+=("$seeds")
+            new_leechers+=("$leechers")
+        done < "$out_raw"
+    fi
 
     local count=${#new_titles[@]}
-    echo "  ${count} resultado(s) novo(s) após filtro"
+    echo "  \"$query\": ${count} resultado(s) novo(s) após filtro"
 
     if [[ $count -eq 0 ]]; then
-        echo "  Nenhum resultado novo."
+        echo "  Nenhum resultado novo para \"$query\"."
         return
     fi
 
-    local -a yad_rows=()
-    local -a intercalado_dl=()
+    local -a yad_rows=() intercalado_dl=()
     for i in "${!new_titles[@]}"; do
         yad_rows+=(TRUE "${new_titles[$i]}" "${new_ids[$i]}")
         intercalado_dl+=("${new_titles[$i]}" "${new_sizes[$i]}" "${new_seeds[$i]}" "${new_leechers[$i]}" "${new_ids[$i]}")
