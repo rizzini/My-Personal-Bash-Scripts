@@ -4,14 +4,14 @@ enable_zram() {
     swapoff -a
     echo 0 > /sys/module/zswap/parameters/enabled
     if ! lsmod | grep -q "^zram"; then
-        modprobe zram num_devices=1 max_comp_streams=4
+        modprobe zram num_devices=1
     fi
     echo zstd > /sys/block/zram0/comp_algorithm
-    echo 4G > /sys/block/zram0/disksize
+    echo 5G > /sys/block/zram0/disksize
     mkswap -U clear /dev/zram0
     swapon --discard --priority 100 /dev/zram0
-    swapon --priority 1 /dev/sdb8
-    sysctl -w vm.watermark_boost_factor=0 vm.watermark_scale_factor=100 vm.page-cluster=0 vm.swappiness=10 vm.vfs_cache_pressure=50
+    swapon --priority 1 /dev/sdb3
+    sysctl -w vm.watermark_boost_factor=0 vm.watermark_scale_factor=100 vm.page-cluster=0 vm.swappiness=100 vm.vfs_cache_pressure=100
 }
 disable_zram() {
     for s in $(awk 'NR>1 {print $1}' /proc/swaps); do
@@ -19,8 +19,14 @@ disable_zram() {
     done
     sysctl -w vm.watermark_boost_factor=15000 vm.watermark_scale_factor=10 vm.page-cluster=3 vm.swappiness=60 vm.vfs_cache_pressure=100
     echo 1 > /sys/module/zswap/parameters/enabled
+    local tries=0
     while ! modprobe -r zram; do
-        sleep 0.5;
+        sleep 0.5
+        tries=$((tries + 1))
+        if (( tries >= 10 )); then
+            notify-send -u critical "Falha ao remover módulo zram após 5s"
+            return 1
+        fi
     done
 }
 

@@ -37,6 +37,7 @@ original_user_id="$(id -u "$original_user")"
 
 run_as_user() {
     sudo -u "$original_user" \
+        WAYLAND_DISPLAY="wayland-1" \
         XDG_RUNTIME_DIR="/run/user/$original_user_id" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$original_user_id/bus" \
         "$@"
@@ -94,10 +95,6 @@ copy_userdata_to_mem() {
     touch "$pidfile"
     if [ "$copy_IMGs" == 'true' ]; then
         rm -f /tmp/system.img
-
-        if [ "$(awk '/\<images_path\>/{print $3}' /var/lib/waydroid/waydroid.cfg)" != '/tmp' ]; then
-            sed -i '/\<images_path\>/ s|\(\<images_path\>[[:space:]]*=[[:space:]]*\).*|\1/tmp|' /var/lib/waydroid/waydroid.cfg
-        fi
 
         src="/usr/share/waydroid-extra/images/${container_profile}/system.img"
 
@@ -199,7 +196,9 @@ copy_userdata_to_mem() {
             exit 1
         fi
 
-        ln -sf /usr/share/waydroid-extra/images/"${container_profile}"/vendor.img /tmp/
+        mv /usr/share/waydroid-extra/images/"${container_profile}"/system.img /usr/share/waydroid-extra/images/"${container_profile}"/system.img_bkp
+
+        ln -sf  /tmp/system.img /usr/share/waydroid-extra/images/"${container_profile}"/system.img
 
         touch /tmp/waydroid_IMGs_on_mem
     fi
@@ -353,7 +352,8 @@ copy_userdata_to_disk() {
 
     if [ -f '/tmp/waydroid_IMGs_on_mem' ]; then
         rm -f /tmp/waydroid_IMGs_on_mem
-        rm -f /tmp/system.img /tmp/vendor.img
+        rm -f /tmp/system.img
+        mv /usr/share/waydroid-extra/images/"${container_profile}"/system.img_bkp /usr/share/waydroid-extra/images/"${container_profile}"/system.img
     fi
 
     umount /dev/shm/waydroid/data/media
@@ -494,9 +494,9 @@ trap cleanup EXIT INT TERM
 
 if waydroid_state; then
 
-    notify 'Fechando Waydroid..'
+    # notify 'Fechando Waydroid..'
     run_as_user systemd-run --user --scope waydroid session stop
-    systemctl stop waydroid-container.service keyd.service
+    systemctl stop waydroid-container.service
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk
@@ -556,7 +556,7 @@ else
         if mount --bind "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid  "$original_user_home"/.local/share/waydroid; then
             if mount --bind "$original_user_home"/.local/share/WAYDROID_CONTAINERS/"$container_profile"/waydroid_media  "$original_user_home"/.local/share/waydroid/data/media; then
                 notify_exit
-                systemctl start waydroid-container.service keyd.service
+                systemctl start waydroid-container.service
                 while IFS= read -r process; do
                     if [[ $process == *"Android with user 0 is ready"* ]]; then
                         manage_environment_notifications disable
@@ -586,7 +586,7 @@ else
                 if [ "$copy_IMGs" == 'true' ]; then
                     if [ -f "/tmp/waydroid_IMGs_on_mem" ]; then
                         notify_exit
-                        systemctl start waydroid-container.service keyd.service
+                        systemctl start waydroid-container.service
                         while IFS= read -r process; do
                             if [[ $process == *"Android with user 0 is ready"* ]]; then
                                 manage_environment_notifications disable
@@ -605,7 +605,7 @@ else
                     fi
                 else
                     notify_exit
-                    systemctl start waydroid-container.service keyd.service
+                    systemctl start waydroid-container.service
                     while IFS= read -r process; do
                         if [[ $process == *"Android with user 0 is ready"* ]]; then
                             manage_environment_notifications disable
@@ -631,7 +631,7 @@ else
 
     manage_environment_notifications enable
     run_as_user systemd-run --user --scope waydroid session stop
-    systemctl stop waydroid-container.service keyd.service
+    systemctl stop waydroid-container.service
 
     if [ "$data_in_mem" = 'true' ]; then
         copy_userdata_to_disk

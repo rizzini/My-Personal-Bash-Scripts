@@ -15,10 +15,10 @@ password="${creds[2]}"
 
 ip4="$(curl -4fsS https://ifconfig.me)"
 
-if [[ -z "$ip4" ]]; then
-    notify-send -u critical -i network-wired "No-IP updater" "Erro ao pegar o IP IPv4."
-    exit 1
-fi
+# if [[ -z "$ip4" ]]; then
+#     notify-send -u critical -i network-wired "No-IP updater" "Erro ao pegar o IP IPv4."
+#     exit 1
+# fi
 
 cached_ip=""
 
@@ -37,6 +37,6 @@ if [[ "$response" == *"good"* || "$response" == *"nochg"* ]]; then
     exit 0
 fi
 
-notify-send -u critical -i network-wired "No-IP updater" "Falha ao atualizar No-IP: ${response}"
+# notify-send -u critical -i network-wired "No-IP updater" "Falha ao atualizar No-IP: ${response}"
 
 exit 1
